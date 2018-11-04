@@ -1,0 +1,136 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+#
+# Raspberry Piのボタンが押されると，指定の端末に
+# 対してpingを実行(ICMP echo request)を投げるプログラム
+#
+# 動作を確認した環境
+# OS     : 2018-03-13-raspbian-stretch-lite
+# Python : 2.7.13
+#
+# pipで追加インストールしたモジュール : pings
+#
+
+from time import sleep
+import RPi.GPIO as GPIO
+#import pings
+import time
+#import socket
+import os
+import sys
+from logging import getLogger, StreamHandler, FileHandler, Formatter, DEBUG, INFO
+
+
+
+## ロガー
+logger  = getLogger('buttonAndShutdown')
+fh = FileHandler('/var/log/buttonAndShutdown.log')
+sh = StreamHandler()  
+
+formatter = Formatter('%(asctime)s %(levelname)s : %(message)s')
+fh.setFormatter(formatter)
+sh.setFormatter(formatter)
+
+## デバッグ設定
+DAEMONIZE_ENABLED   = True  # daemon化する(True)/しない(False)
+#DAEMONIZE_ENABLED   = False  # daemon化する(True)/しない(False)
+DEBUG_ENABLED       = False # デバッグモードで実行(True)/通常モードで実行(False)
+#DEBUG_ENABLED       = True # デバッグモードで実行(True)/通常モードで実行(False)
+
+if DEBUG_ENABLED:
+    logger.setLevel(DEBUG)
+    fh.setLevel(DEBUG)
+    sh.setLevel(DEBUG)
+else:
+    logger.setLevel(INFO)
+    fh.setLevel(INFO)
+    sh.setLevel(INFO)
+
+logger.addHandler(fh)
+if not DAEMONIZE_ENABLED:
+    logger.addHandler(sh)
+logger.propagate = False
+
+## GPIO ピン番号
+GPIO_PIN_BTN  = 26    # ボタン : 橙
+
+GPIO_PIN_LED  = 19    # LED : 赤
+
+## ボタン監視設定
+loopWait        = 0.1   # ボタンをチェックするループの待ち時間
+buttonThreshold = 3     # ボタンをONと判定する閾値
+
+
+#
+# ピンのセットアップ関数
+#
+def setupPins():
+    GPIO.setwarnings(False)
+    GPIO.setmode(GPIO.BCM)
+    
+    # 各ボタンをGPIOの入力として設定
+    #GPIO.setup(GPIO_PIN_BTN,  GPIO.IN)
+    GPIO.setup(GPIO_PIN_BTN,  GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+    
+    # 各LEDをGPIOの出力として設定
+    GPIO.setup(GPIO_PIN_LED,  GPIO.OUT)
+
+    # 各LEDをOFF
+    GPIO.output(GPIO_PIN_LED, GPIO.LOW)
+
+
+# アクションの実行
+def doAction():
+    logger.info('doAction: start')
+    # 緑ボタン
+    GPIO.output(GPIO_PIN_LED,GPIO.HIGH)
+    sleep(1)
+    try:
+        logger.info('doAction: start')
+        os.system('/sbin/shutdown -h now')
+    except:
+        pass
+    GPIO.output(GPIO_PIN_LED,GPIO.LOW)
+    logger.info('doAction: end')
+
+
+# ボタンの監視とアクションの呼び出し
+def mainLoop():
+    buttonCounter=0
+
+    while True:
+        # 各ボタンについて、
+        #   - 離されている       -> カウンタを0にリセット
+        #   - 押し続けられている -> カウンタをインクリメント
+        buttonCounter = 0 if (GPIO.input(GPIO_PIN_BTN) == 0) else buttonCounter+1
+
+        # カウンタが閾値を上回っているボタンに対するアクションを行う 
+        if buttonCounter >= buttonThreshold:
+            buttonCounter=0
+            doAction()
+
+        sleep(loopWait)
+
+
+# daemon化する関数
+def daemonize():
+    pid = os.fork()
+    if pid > 0: # 親プロセスの場合
+        pid_file = open('/var/run/buttonAndShutdown.pid','w')
+        pid_file.write(str(pid)+"\n")
+        pid_file.close()
+        sys.exit()
+    if pid == 0:# 子プロセスの場合
+        mainLoop()
+
+
+# メインループ
+if __name__ == "__main__":
+    setupPins()
+    while True:
+        if DAEMONIZE_ENABLED:
+            daemonize()
+        else:
+            mainLoop()
+

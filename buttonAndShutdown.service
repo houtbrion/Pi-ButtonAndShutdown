@@ -1,0 +1,11 @@
+[Unit]
+Description = check button and try to shutdown.
+
+[Service]
+ExecStart=/usr/local/bin/buttonAndShutdown
+Restart=always
+Type=forking
+PIDFile=/var/run/buttonAndShutdown.pid
+
+[Install]
+WantedBy=multi-user.target
